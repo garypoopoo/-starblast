@@ -1,6 +1,7 @@
 #include "ui.h"
 #include "raylib.h"
 #include <stdio.h>
+#include <math.h>    // sinf() used in ui_draw_menu pulsing animation
 
 #define COL_ACCENT  (Color){80, 220, 255, 255}
 #define COL_RED     (Color){255, 70, 70, 255}
