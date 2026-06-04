@@ -126,6 +126,16 @@
     var _loadingHidden = false;
 
     var Module = {
+      preRun: [],
+      postRun: [
+        function() {
+          if (!_loadingHidden) {
+            _loadingHidden = true;
+            document.getElementById('loading-text').textContent = 'READY';
+            _hideLoading();
+          }
+        }
+      ],
       canvas: (function () {
         var canvas = document.getElementById('canvas');
         canvas.addEventListener('webglcontextlost', function (e) {
