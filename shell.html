@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>STARBLAST</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #05050f;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Courier New', monospace;
+      color: #50dcff;
+    }
+
+    h1 {
+      font-size: 2rem;
+      letter-spacing: 0.3em;
+      margin-bottom: 10px;
+      text-shadow: 0 0 20px #50dcff88;
+    }
+
+    #subtitle {
+      font-size: 0.75rem;
+      color: #50a0aa;
+      letter-spacing: 0.2em;
+      margin-bottom: 20px;
+    }
+
+    #canvas-container {
+      position: relative;
+      border: 1px solid #1a3050;
+      box-shadow: 0 0 40px #50dcff22;
+    }
+
+    canvas {
+      display: block;
+    }
+
+    /* Loading overlay */
+    #loading {
+      position: absolute;
+      inset: 0;
+      background: #05050f;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      z-index: 10;
+    }
+
+    #loading.hidden { display: none; }
+
+    #progress-bar {
+      width: 260px;
+      height: 6px;
+      background: #1a3050;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    #progress-fill {
+      height: 100%;
+      width: 0%;
+      background: #50dcff;
+      border-radius: 3px;
+      transition: width 0.2s ease;
+    }
+
+    #loading-text {
+      font-size: 0.7rem;
+      color: #50a0aa;
+      letter-spacing: 0.15em;
+    }
+
+    #controls-hint {
+      margin-top: 14px;
+      font-size: 0.65rem;
+      color: #2a5060;
+      letter-spacing: 0.1em;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>★ STARBLAST ★</h1>
+  <p id="subtitle">TOP-DOWN SPACE SHOOTER</p>
+
+  <div id="canvas-container">
+    <div id="loading">
+      <div id="loading-text">LOADING...</div>
+      <div id="progress-bar"><div id="progress-fill"></div></div>
+    </div>
+    <canvas id="canvas" width="900" height="700" tabindex="0"></canvas>
+  </div>
+
+  <p id="controls-hint">WASD / ARROWS — Move &nbsp;|&nbsp; SPACE / Z — Shoot &nbsp;|&nbsp; P — Pause</p>
+
+  <script type="text/javascript">
+    // Fix #6: animate progress bar during WASM load; complete it when Emscripten
+    // signals all run-dependencies have resolved (left === 0).
+    var _pct = 0;
+    var _progressTimer = setInterval(function () {
+      _pct = Math.min(_pct + 2, 90);  // fill to 90% while waiting
+      var fill = document.getElementById('progress-fill');
+      if (fill) fill.style.width = _pct + '%';
+    }, 80);
+
+    var Module = {
+      canvas: (function () {
+        var canvas = document.getElementById('canvas');
+        canvas.addEventListener('webglcontextlost', function (e) {
+          e.preventDefault();
+        }, false);
+        return canvas;
+      })(),
+
+      setStatus: function (text) {
+        var el = document.getElementById('loading-text');
+        if (el) el.textContent = text || 'READY';
+      },
+
+      monitorRunDependencies: function (left) {
+        if (left === 0) {
+          // Snap bar to 100%, then hide overlay after a short pause
+          clearInterval(_progressTimer);
+          var fill = document.getElementById('progress-fill');
+          if (fill) fill.style.width = '100%';
+          setTimeout(function () {
+            var ov = document.getElementById('loading');
+            if (ov) ov.classList.add('hidden');
+            document.getElementById('canvas').focus();
+          }, 200);
+        }
+      },
+
+      printErr: function (text) { console.error(text); },
+    };
+
+    // Emscripten generated JS is injected below this line
+    {{{ SCRIPT }}}
+  </script>
+</body>
+</html>
