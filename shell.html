@@ -103,14 +103,27 @@
   <p id="controls-hint">WASD / ARROWS — Move &nbsp;|&nbsp; SPACE / Z — Shoot &nbsp;|&nbsp; P — Pause</p>
 
   <script type="text/javascript">
-    // Fix #6: animate progress bar during WASM load; complete it when Emscripten
-    // signals all run-dependencies have resolved (left === 0).
+    // Animate progress bar while WASM is downloading/compiling
     var _pct = 0;
     var _progressTimer = setInterval(function () {
-      _pct = Math.min(_pct + 2, 90);  // fill to 90% while waiting
+      _pct = Math.min(_pct + 2, 90);
       var fill = document.getElementById('progress-fill');
       if (fill) fill.style.width = _pct + '%';
     }, 80);
+
+    function _hideLoading() {
+      clearInterval(_progressTimer);
+      var fill = document.getElementById('progress-fill');
+      if (fill) fill.style.width = '100%';
+      setTimeout(function () {
+        var ov = document.getElementById('loading');
+        if (ov) ov.classList.add('hidden');
+        var c = document.getElementById('canvas');
+        if (c) c.focus();
+      }, 200);
+    }
+
+    var _loadingHidden = false;
 
     var Module = {
       canvas: (function () {
@@ -121,26 +134,26 @@
         return canvas;
       })(),
 
+      // Emscripten calls setStatus('') with empty string when fully loaded —
+      // this is the most reliable signal across all Emscripten versions.
       setStatus: function (text) {
         var el = document.getElementById('loading-text');
         if (el) el.textContent = text || 'READY';
-      },
-
-      monitorRunDependencies: function (left) {
-        if (left === 0) {
-          // Snap bar to 100%, then hide overlay after a short pause
-          clearInterval(_progressTimer);
-          var fill = document.getElementById('progress-fill');
-          if (fill) fill.style.width = '100%';
-          setTimeout(function () {
-            var ov = document.getElementById('loading');
-            if (ov) ov.classList.add('hidden');
-            document.getElementById('canvas').focus();
-          }, 200);
+        if (!_loadingHidden && text === '') {
+          _loadingHidden = true;
+          _hideLoading();
         }
       },
 
-      printErr: function (text) { console.error(text); },
+      // Backup: also hide via monitorRunDependencies in case setStatus timing differs
+      monitorRunDependencies: function (left) {
+        if (!_loadingHidden && left === 0) {
+          _loadingHidden = true;
+          _hideLoading();
+        }
+      },
+
+      printErr: function (text) { console.error('[STARBLAST]', text); },
     };
 
     // Emscripten generated JS is injected below this line
