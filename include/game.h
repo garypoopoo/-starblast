@@ -43,7 +43,15 @@ typedef struct {
 } Bullet;
 
 // ─── Enemy ────────────────────────────────────────────────────────────────────
-typedef enum { ENEMY_SCOUT, ENEMY_TANK, ENEMY_BOSS } EnemyType;
+typedef enum {
+    ENEMY_SCOUT,
+    ENEMY_TANK,
+    ENEMY_BOSS,
+    ENEMY_SNIPER,
+    ENEMY_ZIGZAG,
+    ENEMY_SHIELDER,
+    ENEMY_KAMIKAZE
+} EnemyType;
 
 typedef struct {
     Vector2    pos;
@@ -53,9 +61,13 @@ typedef struct {
     float      shootTimer;
     float      shootCooldown;
     float      spinTimer;      // boss rotating-bullet cooldown (wave >= 6)
+    float      chargeTimer;
+    float      zigPhase;
     bool       active;
     bool       canDive;
     bool       diving;
+    bool       shieldActive;
+    bool       launched;
     EnemyType  type;
 } Enemy;
 

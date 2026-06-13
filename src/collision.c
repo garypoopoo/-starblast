@@ -33,8 +33,12 @@ void collision_check(Game *g) {
             g->enemies[e].hp -= 999.0f;
             if (g->enemies[e].hp <= 0) {
                 // Score for bomb kills (no combo)
-                int pts = (g->enemies[e].type == ENEMY_BOSS) ? 500
-                        : (g->enemies[e].type == ENEMY_TANK) ? 150
+                int pts = (g->enemies[e].type == ENEMY_BOSS)     ? 500
+                        : (g->enemies[e].type == ENEMY_TANK)     ? 150
+                        : (g->enemies[e].type == ENEMY_SHIELDER) ? 120
+                        : (g->enemies[e].type == ENEMY_SNIPER)   ? 100
+                        : (g->enemies[e].type == ENEMY_KAMIKAZE) ?  80
+                        : (g->enemies[e].type == ENEMY_ZIGZAG)   ?  60
                         : 50;
                 g->player.score += pts;
                 enemy_kill(g, e);
@@ -62,6 +66,14 @@ void collision_check(Game *g) {
                     : (g->enemies[e].type == ENEMY_TANK) ? 20.0f : 16.0f;
 
             if (dist2(g->bullets[b].pos, g->enemies[e].pos) < r*r) {
+                if (g->enemies[e].type == ENEMY_SHIELDER && g->enemies[e].shieldActive) {
+                    if (g->bullets[b].vel.y > 0) {
+                        g->bullets[b].active = false;
+                        continue;
+                    }
+                    g->enemies[e].shieldActive = false;
+                }
+
                 g->bullets[b].active = false;
 
                 float dmg = (g->enemies[e].type == ENEMY_BOSS) ? 10.0f : 20.0f;
@@ -72,8 +84,12 @@ void collision_check(Game *g) {
                                (Color){255,255,100,255}, 6, 150.0f, 0.3f);
 
                 if (g->enemies[e].hp <= 0) {
-                    int pts = (g->enemies[e].type == ENEMY_BOSS) ? 500
-                            : (g->enemies[e].type == ENEMY_TANK) ? 150
+                    int pts = (g->enemies[e].type == ENEMY_BOSS)     ? 500
+                            : (g->enemies[e].type == ENEMY_TANK)     ? 150
+                            : (g->enemies[e].type == ENEMY_SHIELDER) ? 120
+                            : (g->enemies[e].type == ENEMY_SNIPER)   ? 100
+                            : (g->enemies[e].type == ENEMY_KAMIKAZE) ?  80
+                            : (g->enemies[e].type == ENEMY_ZIGZAG)   ?  60
                             : 50;
                     // Combo multiplier
                     int multiplier = g->player.combo > 1 ? g->player.combo : 1;
@@ -105,7 +121,8 @@ void collision_check(Game *g) {
         if (!g->enemies[e].active) continue;
         if (dist2(g->enemies[e].pos, g->player.pos) < 30.0f*30.0f) {
             enemy_kill(g, e);              // Fix #2: was only hp=0, no particles
-            player_take_damage(&g->player, 40.0f);
+            float contactDmg = (g->enemies[e].type == ENEMY_KAMIKAZE) ? 80.0f : 40.0f;
+            player_take_damage(&g->player, contactDmg);
             g->hitFlashTimer = 0.1f;
         }
     }

@@ -38,8 +38,12 @@ void enemy_spawn_wave(Enemy enemies[], int wave, float speedMultiplier) {
             enemies[i].active      = true;
             enemies[i].shootTimer  = efrand() * 2.0f;
             enemies[i].spinTimer   = 1.0f;
+            enemies[i].chargeTimer = 0.0f;
+            enemies[i].zigPhase    = 0.0f;
             enemies[i].canDive     = false;
             enemies[i].diving      = false;
+            enemies[i].shieldActive = false;
+            enemies[i].launched    = false;
             enemies[i].hp = enemies[i].maxHp = 200.0f + wave * 30;
             enemies[i].shootCooldown = 0.6f;
         }
@@ -48,10 +52,16 @@ void enemy_spawn_wave(Enemy enemies[], int wave, float speedMultiplier) {
             int col = i % cols;
             int row = i / cols;
 
-            EnemyType type;
-            if (wave >= 2 && i == 0) type = ENEMY_BOSS;  // one boss per wave >= 2
-            else if (efrand() < 0.25f + wave * 0.05f) type = ENEMY_TANK;
-            else type = ENEMY_SCOUT;
+            EnemyType pool[7];
+            int poolSize = 0;
+            pool[poolSize++] = ENEMY_SCOUT;
+            pool[poolSize++] = ENEMY_SCOUT;
+            if (wave >= 2) pool[poolSize++] = ENEMY_TANK;
+            if (wave >= 3) pool[poolSize++] = ENEMY_SNIPER;
+            if (wave >= 4) pool[poolSize++] = ENEMY_ZIGZAG;
+            if (wave >= 5) pool[poolSize++] = ENEMY_KAMIKAZE;
+            if (wave >= 6) pool[poolSize++] = ENEMY_SHIELDER;
+            EnemyType type = pool[(int)(efrand() * poolSize)];
 
             enemies[i].pos.x       = startX + col * gapX;
             enemies[i].pos.y       = 60.0f + row * 70.0f;
@@ -61,8 +71,12 @@ void enemy_spawn_wave(Enemy enemies[], int wave, float speedMultiplier) {
             enemies[i].active      = true;
             enemies[i].shootTimer  = efrand() * 2.0f;
             enemies[i].spinTimer   = 1.0f;
+            enemies[i].chargeTimer = 0.0f;
+            enemies[i].zigPhase    = 0.0f;
             enemies[i].canDive     = false;
             enemies[i].diving      = false;
+            enemies[i].shieldActive = false;
+            enemies[i].launched    = false;
 
             switch (type) {
                 case ENEMY_SCOUT:
@@ -82,6 +96,32 @@ void enemy_spawn_wave(Enemy enemies[], int wave, float speedMultiplier) {
                     enemies[i].pos.x = SCREEN_W / 2.0f;
                     enemies[i].pos.y = 80.0f;
                     enemies[i].spinTimer   = 1.0f;
+                    break;
+                case ENEMY_SNIPER:
+                    enemies[i].hp = enemies[i].maxHp = 30.0f + wave * 8;
+                    enemies[i].shootCooldown = 0.3f;
+                    enemies[i].chargeTimer = 2.0f;
+                    enemies[i].vel.x = (efrand() > 0.5f ? 1.0f : -1.0f) * 20.0f;
+                    break;
+                case ENEMY_ZIGZAG:
+                    enemies[i].hp = enemies[i].maxHp = 25.0f + wave * 4;
+                    enemies[i].shootCooldown = 999.0f;
+                    enemies[i].vel.x = (efrand() > 0.5f ? 1.0f : -1.0f) * 160.0f * speedMultiplier;
+                    enemies[i].vel.y = 60.0f * speedMultiplier;
+                    enemies[i].zigPhase = efrand() * 6.28f;
+                    break;
+                case ENEMY_SHIELDER:
+                    enemies[i].hp = enemies[i].maxHp = 80.0f + wave * 12;
+                    enemies[i].shootCooldown = 2.5f;
+                    enemies[i].shieldActive = true;
+                    enemies[i].vel.x = (efrand() > 0.5f ? 1.0f : -1.0f) * 50.0f * speedMultiplier;
+                    break;
+                case ENEMY_KAMIKAZE:
+                    enemies[i].hp = enemies[i].maxHp = 15.0f + wave * 3;
+                    enemies[i].shootCooldown = 999.0f;
+                    enemies[i].vel.x = 0.0f;
+                    enemies[i].vel.y = 0.0f;
+                    enemies[i].launched = false;
                     break;
             }
         }
@@ -109,6 +149,39 @@ void enemy_update_all(Enemy enemies[], Bullet bullets[], Particle particles[],
         if (e->pos.x < 30)          { e->pos.x = 30;          e->vel.x = fabsf(e->vel.x); }
         if (e->pos.x > SCREEN_W-30) { e->pos.x = SCREEN_W-30; e->vel.x = -fabsf(e->vel.x); }
 
+        if (e->type == ENEMY_SNIPER) {
+            e->chargeTimer -= dt;
+            if (e->chargeTimer <= 0.0f && e->shootTimer <= 0.0f) {
+                float dx = player->pos.x - e->pos.x;
+                float dy = player->pos.y - e->pos.y;
+                float dist = sqrtf(dx*dx + dy*dy);
+                if (dist < 1) dist = 1;
+                Vector2 vel = { dx/dist * 500.0f, dy/dist * 500.0f };
+                bullet_fire(bullets, (Vector2){e->pos.x, e->pos.y + 10}, vel, false);
+                e->shootTimer = e->shootCooldown;
+                e->chargeTimer = 1.8f;
+                e->vel.x = (efrand() > 0.5f ? 1.0f : -1.0f) * 20.0f;
+            }
+        }
+
+        if (e->type == ENEMY_ZIGZAG) {
+            e->zigPhase += dt * 3.0f;
+            e->pos.x += cosf(e->zigPhase) * 150.0f * dt;
+            e->pos.y += e->vel.y * dt;
+        }
+
+        if (e->type == ENEMY_KAMIKAZE && !e->launched && e->pos.y > SCREEN_H * 0.25f) {
+            e->launched = true;
+            float dx = player->pos.x - e->pos.x;
+            float dy = player->pos.y - e->pos.y;
+            float dist = sqrtf(dx*dx + dy*dy);
+            if (dist < 1) dist = 1;
+            float speedMultiplier = powf(1.08f, (float)(wave - 1));
+            float spd = 380.0f * speedMultiplier;
+            e->vel.x = dx/dist * spd;
+            e->vel.y = dy/dist * spd;
+        }
+
         // If enemy reaches bottom, they pass through (counted as missed)
         if (e->pos.y > SCREEN_H + 40) {
             e->active = false;
@@ -124,7 +197,10 @@ void enemy_update_all(Enemy enemies[], Bullet bullets[], Particle particles[],
 
         // Shooting
         e->shootTimer -= dt;
-        if (e->shootTimer <= 0.0f) {
+        if (e->shootTimer <= 0.0f &&
+            e->type != ENEMY_SNIPER &&
+            e->type != ENEMY_ZIGZAG &&
+            e->type != ENEMY_KAMIKAZE) {
             Vector2 bpos = { e->pos.x, e->pos.y + 20 };
 
             if (e->type == ENEMY_BOSS) {
@@ -227,6 +303,52 @@ void enemy_draw_all(const Enemy enemies[]) {
                     DrawCircle((int)x, (int)y, 22, (Color){255,200,0,(unsigned char)glow});
                 }
                 draw_healthbar(enemies[i].pos, enemies[i].hp, enemies[i].maxHp, 80);
+                break;
+            }
+            case ENEMY_SNIPER: {
+                const Enemy *e = &enemies[i];
+                bool charging = (e->chargeTimer > 0.5f);
+                Color col = charging ? (Color){40,100,220,255} : (Color){20,60,180,255};
+                Vector2 pts[4] = {
+                    {x, y-20}, {x+8, y}, {x, y+20}, {x-8, y}
+                };
+                DrawTriangle(pts[0], pts[1], pts[2], col);
+                DrawTriangle(pts[0], pts[3], pts[2], col);
+                if (charging) {
+                    DrawCircleLines((int)x, (int)y, 6+(int)(e->chargeTimer*4), (Color){200,200,255,120});
+                }
+                draw_healthbar(e->pos, e->hp, e->maxHp, 30);
+                break;
+            }
+            case ENEMY_ZIGZAG: {
+                const Enemy *e = &enemies[i];
+                Color col = {240, 140, 20, 255};
+                DrawTriangle((Vector2){x,y+12}, (Vector2){x-18,y-10}, (Vector2){x,y-2}, col);
+                DrawTriangle((Vector2){x,y+12}, (Vector2){x+18,y-10}, (Vector2){x,y-2}, col);
+                DrawCircle((int)x, (int)y, 4, (Color){255,220,100,255});
+                draw_healthbar(e->pos, e->hp, e->maxHp, 30);
+                break;
+            }
+            case ENEMY_SHIELDER: {
+                const Enemy *e = &enemies[i];
+                DrawRectangle((int)(x-16), (int)(y-14), 32, 28, (Color){40,180,80,255});
+                DrawCircle((int)x, (int)y, 8, (Color){120,255,160,255});
+                if (e->shieldActive) {
+                    DrawCircleSector((Vector2){x,y}, 24, 200, 340, 12, (Color){100,220,255,160});
+                }
+                draw_healthbar(e->pos, e->hp, e->maxHp, 40);
+                break;
+            }
+            case ENEMY_KAMIKAZE: {
+                const Enemy *e = &enemies[i];
+                Color col = e->launched ? (Color){255,50,50,255} : (Color){180,30,30,255};
+                Vector2 v1 = {x, y+18}, v2 = {x-10, y-14}, v3 = {x+10, y-14};
+                DrawTriangle(v1, v2, v3, col);
+                if (e->launched) {
+                    DrawCircle((int)(x - e->vel.x*0.03f), (int)(y - e->vel.y*0.03f), 5, (Color){255,100,50,120});
+                    DrawCircle((int)(x - e->vel.x*0.06f), (int)(y - e->vel.y*0.06f), 3, (Color){255,80,30,60});
+                }
+                draw_healthbar(e->pos, e->hp, e->maxHp, 24);
                 break;
             }
         }
