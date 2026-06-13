@@ -31,13 +31,35 @@ void ui_draw_hud(const Game *g) {
         DrawTriangle(v1, v2, v3, (Color){60,200,255,200});
     }
 
+    // Bombs (orange circles with "B" label, below lives)
+    for (int i = 0; i < g->player.bombs; i++) {
+        int bx = 18 + i * 24;
+        int by = 66;
+        DrawCircle(bx, by, 9, (Color){255, 160, 40, 220});
+        DrawCircle(bx, by, 5, (Color){255, 200, 80, 180});
+        DrawText("B", bx - 3, by - 5, 10, WHITE);
+    }
+
     // Score
     snprintf(buf, sizeof(buf), "SCORE %07d", g->player.score);
     DrawText(buf, SCREEN_W/2 - MeasureText(buf,20)/2, 10, 20, COL_GOLD);
 
+    // Combo (only when > 1, flashing yellow)
+    if (g->player.combo > 1) {
+        float flash = 0.5f + 0.5f * sinf((float)GetTime() * 8.0f);
+        Color comboCol = {255, 255, 50, (unsigned char)(flash * 255)};
+        snprintf(buf, sizeof(buf), "x%d COMBO!", g->player.combo);
+        int tw = MeasureText(buf, 24);
+        DrawText(buf, SCREEN_W/2 - tw/2, 38, 24, comboCol);
+    }
+
     // Wave
     snprintf(buf, sizeof(buf), "WAVE %d", g->wave);
     DrawText(buf, SCREEN_W - 110, 10, 20, COL_ACCENT);
+
+    // Weapon level indicator
+    snprintf(buf, sizeof(buf), "WPN Lv.%d", g->player.weaponLevel);
+    DrawText(buf, SCREEN_W - 110, 34, 16, (Color){60, 255, 140, 255});
 
     // Wave clear banner
     if (g->waveClear) {
@@ -46,6 +68,12 @@ void ui_draw_hud(const Game *g) {
         DrawRectangle(SCREEN_W/2-tw/2-12, SCREEN_H/2-30, tw+24, 50,
                       (Color){0,0,0,160});
         DrawText(msg, SCREEN_W/2-tw/2, SCREEN_H/2-22, 36, COL_GOLD);
+    } else if (g->wave % 5 == 0) {
+        float alpha = 0.5f + 0.5f * sinf((float)GetTime() * 5.0f);
+        Color warnCol = {255, 50, 50, (unsigned char)(alpha * 255)};
+        const char *msg = "⚠ BOSS WAVE ⚠";
+        int tw = MeasureText(msg, 32);
+        DrawText(msg, SCREEN_W/2 - tw/2, 80, 32, warnCol);
     }
 }
 
@@ -77,16 +105,17 @@ void ui_draw_menu(void) {
 
     draw_label("WASD / Arrow Keys  →  Move",    300, 18, WHITE);
     draw_label("SPACE / Z          →  Shoot",   325, 18, WHITE);
-    draw_label("P / ESC            →  Pause",   350, 18, WHITE);
+    draw_label("X                  →  Bomb",     350, 18, (Color){255, 180, 60, 255});
+    draw_label("P / ESC            →  Pause",   375, 18, WHITE);
 
-    draw_label("─────────────────────────────", 380, 18, (Color){60,100,120,200});
+    draw_label("─────────────────────────────", 405, 18, (Color){60,100,120,200});
 
     // Pulsing start prompt
     float alpha = 0.5f + 0.5f * sinf((float)GetTime() * 3.0f);
-    draw_label("PRESS ENTER TO START", 420, 28,
+    draw_label("PRESS ENTER TO START", 445, 28,
                (Color){80,220,255,(unsigned char)(alpha*255)});
 
-    draw_label("v1.0  –  Made with raylib", SCREEN_H - 30, 16,
+    draw_label("v2.0  –  Made with raylib", SCREEN_H - 30, 16,
                (Color){80,100,120,255});
 }
 
@@ -99,14 +128,22 @@ void ui_draw_pause(void) {
 }
 
 // ─── GAME OVER ────────────────────────────────────────────────────────────────
-void ui_draw_gameover(int score) {
+void ui_draw_gameover(int score, int highScore, bool isNewBest) {
     char buf[64];
     DrawRectangle(0, 0, SCREEN_W, SCREEN_H, (Color){0,0,0,180});
     draw_label("GAME OVER",         SCREEN_H/2 - 90, 60, COL_RED);
     snprintf(buf, sizeof(buf), "FINAL SCORE: %d", score);
-    draw_label(buf,                 SCREEN_H/2,      28, COL_GOLD);
-    draw_label("Press ENTER to retry", SCREEN_H/2 + 50, 22, WHITE);
-    draw_label("Press ESC for menu",   SCREEN_H/2 + 80, 22, (Color){180,180,180,255});
+    draw_label(buf,                 SCREEN_H/2 - 10, 28, COL_GOLD);
+    
+    if (isNewBest) {
+        draw_label("★ NEW BEST! ★",   SCREEN_H/2 + 25, 24, (Color){255, 255, 50, 255});
+    } else {
+        snprintf(buf, sizeof(buf), "BEST: %d", highScore);
+        draw_label(buf,                 SCREEN_H/2 + 25, 24, (Color){180, 180, 180, 255});
+    }
+
+    draw_label("Press ENTER to retry", SCREEN_H/2 + 70, 22, WHITE);
+    draw_label("Press ESC for menu",   SCREEN_H/2 + 100, 22, (Color){180,180,180,255});
 }
 
 // ─── WIN ─────────────────────────────────────────────────────────────────────
@@ -120,4 +157,39 @@ void ui_draw_win(int score, int wave) {
     draw_label(buf,                 SCREEN_H/2 + 10,  28, COL_GOLD);
     draw_label("Press ENTER to play again", SCREEN_H/2 + 60, 22, WHITE);
     draw_label("Press ESC for menu",         SCREEN_H/2 + 90, 22, (Color){180,180,180,255});
+}
+
+// ─── UPGRADE ─────────────────────────────────────────────────────────────────
+void ui_draw_upgrade(const UpgradeOption options[3]) {
+    DrawRectangle(0, 0, SCREEN_W, SCREEN_H, (Color){0,0,0,200});
+    draw_label("CHOOSE UPGRADE", 100, 50, COL_ACCENT);
+
+    int boxW = 240;
+    int boxH = 300;
+    int gap = 30;
+    int startX = SCREEN_W/2 - (boxW*3 + gap*2)/2;
+    int startY = 220;
+
+    for (int i = 0; i < 3; i++) {
+        int x = startX + i * (boxW + gap);
+        
+        // Background
+        DrawRectangle(x, startY, boxW, boxH, (Color){20, 30, 50, 255});
+        DrawRectangleLines(x, startY, boxW, boxH, (Color){80, 120, 180, 255});
+        
+        // Key prompt
+        char keyBuf[16];
+        snprintf(keyBuf, sizeof(keyBuf), "PRESS %d", i+1);
+        DrawRectangle(x, startY - 30, boxW, 30, (Color){40, 60, 100, 255});
+        int tw = MeasureText(keyBuf, 20);
+        DrawText(keyBuf, x + boxW/2 - tw/2, startY - 25, 20, WHITE);
+        
+        // Label
+        int lw = MeasureText(options[i].label, 24);
+        DrawText(options[i].label, x + boxW/2 - lw/2, startY + 40, 24, COL_GOLD);
+        
+        // Description
+        int dw = MeasureText(options[i].desc, 18);
+        DrawText(options[i].desc, x + boxW/2 - dw/2, startY + 140, 18, WHITE);
+    }
 }

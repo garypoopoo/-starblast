@@ -5,7 +5,10 @@
 #include "particle.h"
 #include "background.h"
 #include "collision.h"
+#include "powerup.h"
 #include "ui.h"
+#include "upgrade.h"
+#include "highscore.h"
 #include "raylib.h"
 #include <string.h>
 
@@ -13,18 +16,20 @@
 #include <emscripten/emscripten.h>
 #endif
 
-#define MAX_WAVES        5
 #define WAVE_CLEAR_DELAY 2.5f
 
 static Game g;
 
 static void game_reset(Game *g) {
+    int hi = g->highScore;
     memset(g, 0, sizeof(Game));
+    g->highScore = hi;
     g->state = STATE_PLAYING;
     g->wave  = 1;
+    g->speedMultiplier = 1.0f;
     player_init(&g->player);
     background_init(g->stars);
-    enemy_spawn_wave(g->enemies, g->wave);
+    enemy_spawn_wave(g->enemies, g->wave, g->speedMultiplier);
     g->enemiesLeft = enemy_count_active(g->enemies);
 }
 
@@ -45,22 +50,40 @@ static void update_draw_frame(void) {
             g.state = STATE_PAUSED;
 
         if (!g.waveClear) {
-            player_update(&g.player, g.bullets, dt);
-            enemy_update_all(g.enemies, g.bullets, g.particles, &g.player, dt);
+            player_update(&g, dt);
+            enemy_update_all(g.enemies, g.bullets, g.particles, &g.player, dt, g.wave, &g.enemiesLeft);
             bullet_update_all(g.bullets, dt);
             particle_update_all(g.particles, dt);
+            powerup_update_all(g.powerups, dt);
+            powerup_check_collect(g.powerups, &g.player);
             collision_check(&g);
+
+            // ── Combo timer ──────────────────────────────────────────────────
+            if (g.player.comboTimer > 0.0f) {
+                g.player.comboTimer -= dt;
+                if (g.player.comboTimer <= 0.0f)
+                    g.player.combo = 0;
+            }
 
             if (g.player.hp <= 0) {
                 g.player.lives--;
                 if (g.player.lives <= 0) {
+                    int prevHigh = g.highScore;
+                    if (g.player.score > g.highScore) {
+                        g.highScore = g.player.score;
+                        highscore_save(g.highScore);
+                    }
+                    g.isNewBest = (g.player.score > prevHigh && g.player.score > 0);
                     g.state = STATE_GAMEOVER;
                 } else {
                     g.player.hp    = g.player.maxHp;
                     g.player.pos.x = SCREEN_W / 2.0f;
                     g.player.pos.y = SCREEN_H - 80.0f;
                     g.player.invincible = true;
-                    g.player.invTimer   = 2.5f;
+                    g.player.invTimer   = 1.5f;
+                    g.player.weaponLevel = (g.player.weaponLevel > 1) ? g.player.weaponLevel - 1 : 1;
+                    g.player.shield = false;
+                    g.player.speedBoostTimer = 0.0f;
                     memset(g.bullets, 0, sizeof(g.bullets)); // Fix #5: clear lingering bullets on respawn
                 }
             }
@@ -75,16 +98,38 @@ static void update_draw_frame(void) {
             bullet_update_all(g.bullets, dt);
 
             if (g.waveTimer <= 0.0f) {
-                g.wave++;
-                if (g.wave > MAX_WAVES) {
+                if (g.wave >= 99) {
                     g.state = STATE_WIN;
                 } else {
-                    g.waveClear = false;
-                    memset(g.bullets, 0, sizeof(g.bullets));
-                    enemy_spawn_wave(g.enemies, g.wave);
-                    g.enemiesLeft = enemy_count_active(g.enemies);
+                    g.state = STATE_UPGRADE;
+                    memset(g.powerups, 0, sizeof(g.powerups));
+                    upgrade_generate(g.upgradeOptions);
+                    g.upgradeChoice = -1;
                 }
             }
+        }
+        if (g.hitFlashTimer > 0.0f) {
+            g.hitFlashTimer -= dt;
+        }
+        break;
+    }
+
+    case STATE_UPGRADE: {
+        if (IsKeyPressed(KEY_ESCAPE)) { g.state = STATE_MENU; break; }
+        background_update(g.stars, dt);
+        if (IsKeyPressed(KEY_ONE)) g.upgradeChoice = 0;
+        if (IsKeyPressed(KEY_TWO)) g.upgradeChoice = 1;
+        if (IsKeyPressed(KEY_THREE)) g.upgradeChoice = 2;
+
+        if (g.upgradeChoice != -1) {
+            upgrade_apply(&g, g.upgradeOptions[g.upgradeChoice].type);
+            g.wave++;
+            g.waveClear = false;
+            memset(g.bullets, 0, sizeof(g.bullets));
+            g.speedMultiplier *= 1.08f;
+            enemy_spawn_wave(g.enemies, g.wave, g.speedMultiplier);
+            g.enemiesLeft = enemy_count_active(g.enemies);
+            g.state = STATE_PLAYING;
         }
         break;
     }
@@ -119,13 +164,24 @@ static void update_draw_frame(void) {
         particle_draw_all(g.particles);
         bullet_draw_all(g.bullets);
         enemy_draw_all(g.enemies);
+        powerup_draw_all(g.powerups);
         player_draw(&g.player);
         ui_draw_hud(&g);
         if (g.state == STATE_PAUSED) ui_draw_pause();
+        if (g.hitFlashTimer > 0.0f) {
+            DrawRectangle(0, 0, SCREEN_W, SCREEN_H, (Color){255, 40, 40, 60});
+        }
+        break;
+    case STATE_UPGRADE:
+        particle_draw_all(g.particles);
+        bullet_draw_all(g.bullets);
+        enemy_draw_all(g.enemies);
+        player_draw(&g.player);
+        ui_draw_upgrade(g.upgradeOptions);
         break;
     case STATE_GAMEOVER:
         particle_draw_all(g.particles);
-        ui_draw_gameover(g.player.score);
+        ui_draw_gameover(g.player.score, g.highScore, g.isNewBest);
         break;
     case STATE_WIN:
         ui_draw_win(g.player.score, g.wave - 1);
@@ -141,6 +197,7 @@ int main(void) {
 
     memset(&g, 0, sizeof(g));
     g.state = STATE_MENU;
+    g.highScore = highscore_load();
     background_init(g.stars);
 
 #ifdef __EMSCRIPTEN__

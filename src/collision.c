@@ -1,6 +1,7 @@
 #include "collision.h"
 #include "particle.h"
 #include "player.h"    // Fix: was missing – needed for player_take_damage()
+#include "powerup.h"
 #include "raylib.h"
 #include <math.h>
 
@@ -16,11 +17,40 @@ static void enemy_kill(Game *g, int e) {
             :                                      (Color){100,220,255,255};
     particle_emit(g->particles, g->enemies[e].pos, c,                       20, 200.0f, 0.8f);
     particle_emit(g->particles, g->enemies[e].pos, (Color){255,200,100,255},10, 120.0f, 1.2f);
+
+    // 20% chance to spawn power-up at death position
+    powerup_spawn(g->powerups, g->enemies[e].pos);
+
     g->enemies[e].active = false;   // deactivate immediately (not deferred to enemy_update_all)
     if (g->enemiesLeft > 0) g->enemiesLeft--;  // Fix #3 #9: keep counter in sync
 }
 
 void collision_check(Game *g) {
+    // ── Bomb: instant screen-clear ────────────────────────────────────────────
+    if (g->bombActive) {
+        for (int e = 0; e < MAX_ENEMIES; e++) {
+            if (!g->enemies[e].active) continue;
+            g->enemies[e].hp -= 999.0f;
+            if (g->enemies[e].hp <= 0) {
+                // Score for bomb kills (no combo)
+                int pts = (g->enemies[e].type == ENEMY_BOSS) ? 500
+                        : (g->enemies[e].type == ENEMY_TANK) ? 150
+                        : 50;
+                g->player.score += pts;
+                enemy_kill(g, e);
+            }
+        }
+        // Clear all enemy bullets
+        for (int b = 0; b < MAX_BULLETS; b++) {
+            if (g->bullets[b].active && !g->bullets[b].fromPlayer)
+                g->bullets[b].active = false;
+        }
+        // Bomb flash particles at screen center
+        Vector2 center = { SCREEN_W / 2.0f, SCREEN_H / 2.0f };
+        particle_emit(g->particles, center, (Color){255,255,200,255}, 40, 400.0f, 0.6f);
+        g->bombActive = false;
+    }
+
     // ── Player bullets vs enemies ─────────────────────────────────────────────
     for (int b = 0; b < MAX_BULLETS; b++) {
         if (!g->bullets[b].active || !g->bullets[b].fromPlayer) continue;
@@ -45,7 +75,11 @@ void collision_check(Game *g) {
                     int pts = (g->enemies[e].type == ENEMY_BOSS) ? 500
                             : (g->enemies[e].type == ENEMY_TANK) ? 150
                             : 50;
-                    g->player.score += pts;
+                    // Combo multiplier
+                    int multiplier = g->player.combo > 1 ? g->player.combo : 1;
+                    g->player.score += pts * multiplier;
+                    g->player.combo++;
+                    g->player.comboTimer = g->player.comboWindow;
                     enemy_kill(g, e); // Fix #1 #2: immediate death + particles
                 }
                 break;
@@ -62,6 +96,7 @@ void collision_check(Game *g) {
             player_take_damage(&g->player, 20.0f);
             particle_emit(g->particles, g->player.pos,
                           (Color){80,160,255,255}, 10, 180.0f, 0.5f);
+            g->hitFlashTimer = 0.1f;
         }
     }
 
@@ -71,6 +106,7 @@ void collision_check(Game *g) {
         if (dist2(g->enemies[e].pos, g->player.pos) < 30.0f*30.0f) {
             enemy_kill(g, e);              // Fix #2: was only hp=0, no particles
             player_take_damage(&g->player, 40.0f);
+            g->hitFlashTimer = 0.1f;
         }
     }
 }
